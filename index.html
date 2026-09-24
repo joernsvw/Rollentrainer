@@ -409,7 +409,8 @@
       wheelF += kmh / 3.6 * 0.5 / (settings.circ / 1000);
       crankF += 88 / 60 * 0.5;
       if (Math.floor(wheelF) > w0) wt = now;
-      if (Math.floor(crankF) > c0) ct = now;
+      ct = Math.round(Math.floor(crankF) / (88 / 60) * 1024) & 0xFFFF;
+      S.hr = Math.round(138 + 8 * Math.sin(t / 30)); S.lastHrAt = Date.now();
       onPower(Math.round(p));
       onWheel('demo', { revs: Math.floor(wheelF), time: wt, unit: 1024 });
       onCrank('demo', { revs: Math.floor(crankF) & 0xFFFF, time: ct, unit: 1024 });
