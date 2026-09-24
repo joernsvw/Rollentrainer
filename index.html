@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#242B27">
 <title>Rolle – Rollentraining aufzeichnen</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
@@ -52,6 +56,7 @@
   .cell:nth-child(odd) { border-right: 1px solid var(--line); padding-right: 12px; }
   .cell:nth-child(even) { padding-left: 14px; }
   .cell .v { font-family: var(--num); font-weight: 600; font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cell .v.hr { color: var(--teal); }
   .cell .l { color: var(--muted); font-size: .9rem; }
 
   .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 8px; }
@@ -104,6 +109,8 @@
   <div class="grid">
     <div class="cell"><div class="v" id="vInst">–</div><div class="l">Watt jetzt</div></div>
     <div class="cell"><div class="v" id="vAvgP">–</div><div class="l">Watt im Schnitt (Training)</div></div>
+    <div class="cell"><div class="v hr" id="vHr">–</div><div class="l">Puls, bpm</div></div>
+    <div class="cell"><div class="v" id="vAvgHr">–</div><div class="l">Puls im Schnitt (Training)</div></div>
     <div class="cell"><div class="v" id="vSpeed">–</div><div class="l">km/h</div></div>
     <div class="cell"><div class="v" id="vCad">–</div><div class="l">Trittfrequenz, U/min</div></div>
     <div class="cell"><div class="v" id="vDist">0,00</div><div class="l">km</div></div>
@@ -115,6 +122,7 @@
     <button class="btn primary" id="bStart" hidden>Training starten</button>
     <button class="btn" id="bPause" hidden>Pause</button>
     <button class="btn danger" id="bStop" hidden>Beenden</button>
+    <button class="btn full" id="bHr">Herzfrequenz verbinden</button>
   </div>
   <p class="hint" id="hint">Tritt kurz in die Pedale, damit der Sensor aufwacht, und tippe dann auf „Trainer verbinden“.</p>
 
@@ -169,7 +177,8 @@
     power: 0, inst: 0, lastPowerAt: 0, powerBuf: [], battery: null, batteryTimer: null,
     speed: 0, lastWheelAt: 0, wheelSrc: null, prevWheel: {},
     cadence: 0, lastCrankAt: 0, crankSrc: null, prevCrank: {},
-    spark: [], lastWorkout: null, wakeLock: null
+    spark: [], lastWorkout: null, wakeLock: null,
+    hrDevice: null, hrConnected: false, hr: 0, lastHrAt: 0, hrManual: false
   };
 
   const $ = id => document.getElementById(id);
@@ -325,9 +334,44 @@
   }
 
   function renderSub() {
-    const el = $('subInfo');
-    if (S.battery == null || !S.connected) { el.textContent = ''; return; }
-    el.innerHTML = `Sensor-Batterie <span class="${S.battery <= 15 ? 'low' : ''}">${S.battery} %</span>`;
+    const parts = [];
+    if (S.connected && S.battery != null) parts.push(`Sensor-Batterie <span class="${S.battery <= 15 ? 'low' : ''}">${S.battery} %</span>`);
+    if (S.hrConnected) parts.push(`Puls: ${S.hrDevice && S.hrDevice.name ? S.hrDevice.name.replace(/[<>&]/g, '') : 'verbunden'}`);
+    $('subInfo').innerHTML = parts.join(', ');
+  }
+
+  // ---------- Herzfrequenz (Heart Rate Service 0x180D) ----------
+  async function connectHr() {
+    if (!navigator.bluetooth) return;
+    try {
+      S.hrDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
+      S.hrDevice.addEventListener('gattserverdisconnected', onHrDisconnected);
+      await openHr();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') $('hint').textContent = 'Herzfrequenz: ' + e.message;
+    }
+  }
+
+  async function openHr() {
+    const server = await S.hrDevice.gatt.connect();
+    const ch = await (await server.getPrimaryService('heart_rate')).getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const dv = e.target.value;
+      const bpm = (dv.getUint8(0) & 0x01) ? dv.getUint16(1, true) : dv.getUint8(1);
+      if (bpm > 0) { S.hr = bpm; S.lastHrAt = Date.now(); }
+    });
+    await ch.startNotifications();
+    S.hrConnected = true;
+    renderSub(); updateButtons();
+  }
+
+  async function onHrDisconnected() {
+    S.hrConnected = false;
+    renderSub(); updateButtons();
+    for (let i = 1; i <= 10; i++) {
+      await new Promise(r => setTimeout(r, Math.min(1000 * i, 5000)));
+      try { await openHr(); return; } catch {}
+    }
   }
 
   async function onDisconnected() {
@@ -413,6 +457,7 @@
     if (!S.samples.length) return null;
     const pw = S.samples.map(s => s[1]);
     const cads = S.samples.map(s => s[3]).filter(c => c > 0);
+    const hrs = S.samples.map(s => s[5]).filter(h => h > 0);
     return {
       id: S.startedAt,
       start: S.startedAt,
@@ -421,7 +466,9 @@
       avgP: pw.reduce((a, b) => a + b, 0) / pw.length,
       maxP: Math.max(...pw),
       avgC: cads.length ? cads.reduce((a, b) => a + b, 0) / cads.length : 0,
-      samples: S.samples // [zeit ms, watt, m/s, U/min, meter]
+      avgHr: hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : 0,
+      maxHr: hrs.length ? Math.max(...hrs) : 0,
+      samples: S.samples // [zeit ms, watt, m/s, U/min, meter, puls]
     };
   }
 
@@ -430,10 +477,11 @@
     if (now - S.lastPowerAt > 3000) { S.power = 0; S.inst = 0; S.powerBuf = []; }
     if (now - S.lastWheelAt > 3000) S.speed = 0;
     if (now - S.lastCrankAt > 3000) S.cadence = 0;
+    if (now - S.lastHrAt > 5000) S.hr = 0;
 
     if (S.recording && !S.paused) {
       S.activeMs += now - S.lastTick;
-      S.samples.push([now, Math.round(S.power), +S.speed.toFixed(2), Math.round(S.cadence), Math.round(S.distance)]);
+      S.samples.push([now, Math.round(S.power), +S.speed.toFixed(2), Math.round(S.cadence), Math.round(S.distance), S.hr]);
       if (S.samples.length % 30 === 0) store.set('rolle.current', buildWorkout());
     }
     S.lastTick = now;
@@ -451,6 +499,9 @@
     $('vAvgP').textContent = S.samples.length ? Math.round(S.samples.reduce((a, x) => a + x[1], 0) / S.samples.length) : '–';
     $('vSpeed').textContent = live ? fmt(S.speed * 3.6, 1) : '–';
     $('vCad').textContent = live ? Math.round(S.cadence) : '–';
+    $('vHr').textContent = S.hr ? S.hr : '–';
+    const hrs = S.samples.map(x => x[5]).filter(h => h > 0);
+    $('vAvgHr').textContent = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : '–';
     $('vDist').textContent = fmt(S.distance / 1000, 2);
     $('vTime').textContent = fmtTime(S.activeMs);
     $('spark').innerHTML = sparkPath(S.spark, 300, 70, 120);
@@ -469,6 +520,7 @@
 
   function updateButtons() {
     $('bConnect').hidden = S.connected;
+    $('bHr').hidden = S.hrConnected;
     $('bStart').hidden = !S.connected || S.recording;
     $('bStart').classList.toggle('full', !S.recording);
     $('bPause').hidden = !S.recording;
@@ -484,7 +536,8 @@
     const avgKmh = w.activeMs ? w.distance / (w.activeMs / 1000) * 3.6 : 0;
     const items = [
       [fmtTime(w.activeMs), 'Zeit'], [fmt(w.distance / 1000, 2), 'km'], [fmt(avgKmh, 1), 'km/h im Schnitt'],
-      [Math.round(w.avgP), 'Watt im Schnitt'], [Math.round(w.maxP), 'Watt maximal'], [Math.round(w.avgC), 'U/min im Schnitt']
+      [Math.round(w.avgP), 'Watt im Schnitt'], [Math.round(w.maxP), 'Watt maximal'], [Math.round(w.avgC), 'U/min im Schnitt'],
+      [w.avgHr ? Math.round(w.avgHr) : '–', 'Puls im Schnitt'], [w.maxHr || '–', 'Puls maximal']
     ];
     $('sumGrid').innerHTML = items.map(([v, l]) => `<div><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
     const pw = w.samples.map(s => s[1]);
@@ -502,7 +555,7 @@
     $('hist').innerHTML = hist.map(w => {
       const d = new Date(w.start);
       return `<li><div><div>${d.toLocaleDateString('de-DE')} um ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
-        <div class="meta">${fmtTime(w.activeMs)}, ${fmt(w.distance / 1000, 1)} km, ${Math.round(w.avgP)} W</div></div>
+        <div class="meta">${fmtTime(w.activeMs)}, ${fmt(w.distance / 1000, 1)} km, ${Math.round(w.avgP)} W${w.avgHr ? ', ' + Math.round(w.avgHr) + ' bpm' : ''}</div></div>
         <div class="row" style="flex:none"><button data-exp="${w.id}">TCX</button><button data-del="${w.id}">Löschen</button></div></li>`;
     }).join('');
   }
@@ -519,14 +572,16 @@
     const iso = t => new Date(t).toISOString();
     const avgC = Math.round(w.avgC);
     const maxS = Math.max(...w.samples.map(s => s[2]));
-    const pts = w.samples.map(([t, p, v, c, d]) =>
-      `<Trackpoint><Time>${iso(t)}</Time><DistanceMeters>${d}</DistanceMeters><Cadence>${Math.min(c, 254)}</Cadence>` +
+    const pts = w.samples.map(([t, p, v, c, d, h]) =>
+      `<Trackpoint><Time>${iso(t)}</Time><DistanceMeters>${d}</DistanceMeters>` +
+      (h > 0 ? `<HeartRateBpm><Value>${h}</Value></HeartRateBpm>` : '') +
+      `<Cadence>${Math.min(c, 254)}</Cadence>` +
       `<Extensions><ns3:TPX><ns3:Speed>${v}</ns3:Speed><ns3:Watts>${p}</ns3:Watts></ns3:TPX></Extensions></Trackpoint>`).join('\n');
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
 <Activities><Activity Sport="Biking"><Id>${iso(w.start)}</Id>
 <Lap StartTime="${iso(w.start)}"><TotalTimeSeconds>${Math.round(w.activeMs / 1000)}</TotalTimeSeconds><DistanceMeters>${Math.round(w.distance)}</DistanceMeters>
-<MaximumSpeed>${maxS}</MaximumSpeed><Calories>0</Calories><Intensity>Active</Intensity><Cadence>${Math.min(avgC, 254)}</Cadence><TriggerMethod>Manual</TriggerMethod>
+<MaximumSpeed>${maxS}</MaximumSpeed><Calories>0</Calories>${w.avgHr ? `<AverageHeartRateBpm><Value>${Math.round(w.avgHr)}</Value></AverageHeartRateBpm><MaximumHeartRateBpm><Value>${w.maxHr}</Value></MaximumHeartRateBpm>` : ''}<Intensity>Active</Intensity><Cadence>${Math.min(avgC, 254)}</Cadence><TriggerMethod>Manual</TriggerMethod>
 <Track>
 ${pts}
 </Track>
@@ -558,6 +613,7 @@ ${pts}
     else e.target.value = settings.circ;
   });
   $('bConnect').addEventListener('click', connect);
+  $('bHr').addEventListener('click', connectHr);
   $('bStart').addEventListener('click', start);
   $('bPause').addEventListener('click', togglePause);
   $('bStop').addEventListener('click', stop);
@@ -569,6 +625,7 @@ ${pts}
   renderHistory();
   updateButtons();
   setInterval(tick, 1000);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 </script>
 </body>
