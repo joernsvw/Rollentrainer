@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#242B27">
+<title>Rolle – Rollentraining aufzeichnen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #242B27;
+    --panel: #2F3833;
+    --line: #435048;
+    --text: #EEF1ED;
+    --muted: #A0AAA3;
+    --power: #6A9A78;
+    --teal: #A3C7AD;
+    --warn: #D9907C;
+    --num: "Barlow Condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+    --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.45; }
+  main { max-width: 560px; margin: 0 auto; padding: 16px 16px 40px; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .brand { font-family: var(--num); font-weight: 700; font-size: 1.6rem; letter-spacing: .02em; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .95rem; text-align: right; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); flex: none; }
+  .dot.on { background: var(--teal); }
+  .dot.wait { background: var(--power); animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } }
+
+  .sub { color: var(--muted); font-size: .9rem; text-align: right; min-height: 1.3em; margin-bottom: 4px; }
+  .sub .low { color: var(--warn); }
+  .power { text-align: center; padding: 8px 0 0; }
+  .power .val { font-family: var(--num); font-weight: 700; font-size: clamp(6rem, 34vw, 10rem); line-height: .9; color: var(--power); font-variant-numeric: tabular-nums; }
+  .power .unit { color: var(--muted); font-size: 1rem; }
+
+  svg.spark { display: block; width: 100%; height: 70px; margin: 10px 0 14px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); }
+  .cell { padding: 12px 4px 10px; border-bottom: 1px solid var(--line); }
+  .cell:nth-child(odd) { border-right: 1px solid var(--line); padding-right: 12px; }
+  .cell:nth-child(even) { padding-left: 14px; }
+  .cell .v { font-family: var(--num); font-weight: 600; font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cell .l { color: var(--muted); font-size: .9rem; }
+
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 8px; }
+  .btn { border: 0; border-radius: 12px; padding: 16px 12px; font-weight: 600; font-size: 1.05rem; background: var(--panel); color: var(--text); }
+  .btn.primary { background: var(--power); color: #111A14; }
+  .btn.full { grid-column: 1 / -1; }
+  .btn.danger { background: transparent; border: 2px solid var(--warn); color: var(--warn); }
+  .btn[hidden] { display: none; }
+  .hint { color: var(--muted); font-size: .92rem; margin: 6px 0 0; }
+  .error { color: var(--warn); }
+
+  section.box { background: var(--panel); border-radius: 14px; padding: 16px; margin-top: 18px; }
+  section.box h2 { font-family: var(--num); font-weight: 600; font-size: 1.4rem; margin: 0 0 10px; }
+  .sumgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; margin-bottom: 12px; }
+  .sumgrid .v { font-family: var(--num); font-weight: 600; font-size: 1.7rem; line-height: 1.05; }
+  .sumgrid .l { color: var(--muted); font-size: .82rem; }
+  svg.chart { display: block; width: 100%; height: 120px; margin: 4px 0 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row .btn { flex: 1 1 140px; }
+
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span { display: block; color: var(--muted); font-size: .9rem; margin-bottom: 4px; }
+  input[type=number] { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+
+  ul.hist { list-style: none; margin: 0; padding: 0; }
+  ul.hist li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  ul.hist li:last-child { border-bottom: 0; }
+  ul.hist .meta { color: var(--muted); font-size: .9rem; }
+  ul.hist button { background: transparent; border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 10px; font-size: .9rem; }
+  details summary { cursor: pointer; font-family: var(--num); font-weight: 600; font-size: 1.4rem; }
+  details[open] summary { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div class="brand">Rolle</div>
+    <div class="status"><span id="statusText">Nicht verbunden</span><span class="dot" id="statusDot"></span></div>
+  </div>
+
+  <div class="sub" id="subInfo"></div>
+
+  <div class="power">
+    <div class="val" id="vPower">–</div>
+    <div class="unit">Watt, Mittel über 3 Sekunden</div>
+  </div>
+
+  <svg class="spark" id="spark" viewBox="0 0 300 70" preserveAspectRatio="none" aria-label="Leistung der letzten zwei Minuten"></svg>
+
+  <div class="grid">
+    <div class="cell"><div class="v" id="vInst">–</div><div class="l">Watt jetzt</div></div>
+    <div class="cell"><div class="v" id="vAvgP">–</div><div class="l">Watt im Schnitt (Training)</div></div>
+    <div class="cell"><div class="v" id="vSpeed">–</div><div class="l">km/h</div></div>
+    <div class="cell"><div class="v" id="vCad">–</div><div class="l">Trittfrequenz, U/min</div></div>
+    <div class="cell"><div class="v" id="vDist">0,00</div><div class="l">km</div></div>
+    <div class="cell"><div class="v" id="vTime">0:00:00</div><div class="l">Trainingszeit</div></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary full" id="bConnect">Trainer verbinden</button>
+    <button class="btn primary" id="bStart" hidden>Training starten</button>
+    <button class="btn" id="bPause" hidden>Pause</button>
+    <button class="btn danger" id="bStop" hidden>Beenden</button>
+  </div>
+  <p class="hint" id="hint">Tritt kurz in die Pedale, damit der Sensor aufwacht, und tippe dann auf „Trainer verbinden“.</p>
+
+  <section class="box" id="summary" hidden>
+    <h2>Training beendet</h2>
+    <div class="sumgrid" id="sumGrid"></div>
+    <svg class="chart" id="sumChart" viewBox="0 0 300 120" preserveAspectRatio="none" aria-label="Leistungsverlauf"></svg>
+    <div class="row">
+      <button class="btn primary" id="bExport">Als TCX für Strava speichern</button>
+      <button class="btn" id="bCloseSum">Schließen</button>
+    </div>
+  </section>
+
+  <section class="box">
+    <details>
+      <summary>Verlauf</summary>
+      <ul class="hist" id="hist"></ul>
+    </details>
+  </section>
+
+  <section class="box">
+    <details>
+      <summary>Einstellungen</summary>
+      <label class="field">
+        <span>Radumfang in mm (für Geschwindigkeit und Distanz)</span>
+        <input type="number" id="inCirc" min="100" max="4000" step="1">
+      </label>
+      <p class="hint">Stimmen die km/h nicht, ist dieser Wert die Stellschraube. Die Watt kommen unabhängig davon direkt vom Sensor.</p>
+      <p class="hint" id="devInfo">Sensor-Infos erscheinen nach dem Verbinden.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="bDemo">Demo ohne Trainer starten</button>
+      </div>
+    </details>
+  </section>
+</main>
+
+<script>
+(() => {
+  // ---------- Speicher ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch {} }
+  };
+  const settings = Object.assign({ circ: 2096 }, store.get('rolle.settings', {}));
+
+  // ---------- Zustand ----------
+  const S = {
+    device: null, connected: false, demoTimer: null, manualDisconnect: false,
+    recording: false, paused: false, startedAt: null, activeMs: 0, lastTick: null,
+    distance: 0, samples: [],
+    power: 0, inst: 0, lastPowerAt: 0, powerBuf: [], battery: null, batteryTimer: null,
+    speed: 0, lastWheelAt: 0, wheelSrc: null, prevWheel: {},
+    cadence: 0, lastCrankAt: 0, crankSrc: null, prevCrank: {},
+    spark: [], lastWorkout: null, wakeLock: null
+  };
+
+  const $ = id => document.getElementById(id);
+  const fmt = (n, d = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const fmtTime = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+
+  // ---------- Bluetooth-Parser ----------
+  // Cycling Power Measurement (0x2A63)
+  function parseCP(dv) {
+    let o = 0;
+    const f = dv.getUint16(o, true); o += 2;
+    const power = dv.getInt16(o, true); o += 2;
+    if (f & 0x01) o += 1;              // Pedal Power Balance
+    if (f & 0x04) o += 2;              // Accumulated Torque
+    let wheel = null, crank = null;
+    if (f & 0x10) { wheel = { revs: dv.getUint32(o, true), time: dv.getUint16(o + 4, true), unit: 2048 }; o += 6; }
+    if (f & 0x20) { crank = { revs: dv.getUint16(o, true), time: dv.getUint16(o + 2, true), unit: 1024 }; o += 4; }
+    return { power, wheel, crank };
+  }
+  // CSC Measurement (0x2A5B)
+  function parseCSC(dv) {
+    let o = 0;
+    const f = dv.getUint8(o); o += 1;
+    let wheel = null, crank = null;
+    if (f & 0x01) { wheel = { revs: dv.getUint32(o, true), time: dv.getUint16(o + 4, true), unit: 1024 }; o += 6; }
+    if (f & 0x02) { crank = { revs: dv.getUint16(o, true), time: dv.getUint16(o + 2, true), unit: 1024 }; o += 4; }
+    return { wheel, crank };
+  }
+
+  function onPower(p) {
+    const now = Date.now();
+    S.lastPowerAt = now;
+    S.inst = Math.max(0, p);
+    S.powerBuf.push({ t: now, p: Math.max(0, p) });
+    S.powerBuf = S.powerBuf.filter(x => now - x.t <= 3000);
+    S.power = S.powerBuf.reduce((a, x) => a + x.p, 0) / S.powerBuf.length;
+  }
+
+  function onWheel(src, w) {
+    if (!S.wheelSrc) S.wheelSrc = src;
+    if (src !== S.wheelSrc) return;
+    const p = S.prevWheel[src];
+    S.prevWheel[src] = w;
+    if (!p) return;
+    const dRevs = (w.revs - p.revs) >>> 0;
+    let dt = (w.time - p.time) & 0xFFFF;
+    if (dRevs === 0 || dt === 0) return;
+    if (dRevs > 200) return; // Sprung nach Neuverbindung ignorieren
+    const sec = dt / w.unit;
+    const meters = dRevs * settings.circ / 1000;
+    S.speed = meters / sec;
+    S.lastWheelAt = Date.now();
+    if (S.recording && !S.paused) S.distance += meters;
+  }
+
+  function onCrank(src, c) {
+    if (!S.crankSrc) S.crankSrc = src;
+    if (src !== S.crankSrc) return;
+    const p = S.prevCrank[src];
+    S.prevCrank[src] = c;
+    if (!p) return;
+    const dRevs = (c.revs - p.revs) & 0xFFFF;
+    const dt = (c.time - p.time) & 0xFFFF;
+    if (dRevs === 0 || dt === 0 || dRevs > 20) return;
+    S.cadence = dRevs / (dt / c.unit) * 60;
+    S.lastCrankAt = Date.now();
+  }
+
+  // ---------- Verbindung ----------
+  function setStatus(text, mode) {
+    $('statusText').textContent = text;
+    $('statusDot').className = 'dot' + (mode ? ' ' + mode : '');
+  }
+
+  async function connect() {
+    if (!navigator.bluetooth) {
+      $('hint').innerHTML = '<span class="error">Dieser Browser kann kein Bluetooth. Öffne die Seite in Chrome auf Android oder am Rechner.</span>';
+      return;
+    }
+    try {
+      S.device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['cycling_power'] }, { services: ['cycling_speed_and_cadence'] }],
+        optionalServices: ['cycling_power', 'cycling_speed_and_cadence', 'battery_service']
+      });
+      S.device.addEventListener('gattserverdisconnected', onDisconnected);
+      S.manualDisconnect = false;
+      await openGatt();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') showError('Verbindung fehlgeschlagen: ' + e.message);
+    }
+  }
+
+  async function openGatt() {
+    setStatus('Verbinde …', 'wait');
+    const server = await S.device.gatt.connect();
+    S.prevWheel = {}; S.prevCrank = {};
+    let any = false;
+    try {
+      const svc = await server.getPrimaryService('cycling_power');
+      const ch = await svc.getCharacteristic('cycling_power_measurement');
+      ch.addEventListener('characteristicvaluechanged', e => {
+        const d = parseCP(e.target.value);
+        onPower(d.power);
+        if (d.wheel) onWheel('cp', d.wheel);
+        if (d.crank) onCrank('cp', d.crank);
+      });
+      await ch.startNotifications(); any = true;
+    } catch (e) { console.warn('Kein Cycling Power', e); }
+    try {
+      const svc = await server.getPrimaryService('cycling_speed_and_cadence');
+      const ch = await svc.getCharacteristic('csc_measurement');
+      ch.addEventListener('characteristicvaluechanged', e => {
+        const d = parseCSC(e.target.value);
+        if (d.wheel) onWheel('csc', d.wheel);
+        if (d.crank) onCrank('csc', d.crank);
+      });
+      await ch.startNotifications(); any = true;
+    } catch (e) { console.warn('Kein CSC', e); }
+    readBattery(server);
+    readDeviceInfo(server);
+    if (!any) throw new Error('Der Sensor sendet weder Leistung noch Geschwindigkeit.');
+    S.connected = true;
+    setStatus(S.device.name || 'Sensor', 'on');
+    updateButtons();
+  }
+
+  async function readBattery(server) {
+    try {
+      const ch = await (await server.getPrimaryService('battery_service')).getCharacteristic('battery_level');
+      const show = v => { S.battery = v; renderSub(); };
+      show((await ch.readValue()).getUint8(0));
+      try {
+        ch.addEventListener('characteristicvaluechanged', e => show(e.target.value.getUint8(0)));
+        await ch.startNotifications();
+      } catch {
+        clearInterval(S.batteryTimer);
+        S.batteryTimer = setInterval(async () => { try { show((await ch.readValue()).getUint8(0)); } catch {} }, 5 * 60 * 1000);
+      }
+    } catch { S.battery = null; renderSub(); }
+  }
+
+  async function readDeviceInfo(server) {
+    const names = { manufacturer_name_string: 'Hersteller', model_number_string: 'Modell', serial_number_string: 'Seriennummer',
+                    firmware_revision_string: 'Firmware', hardware_revision_string: 'Hardware' };
+    const out = [];
+    try {
+      const svc = await server.getPrimaryService('device_information');
+      for (const [k, label] of Object.entries(names)) {
+        try { out.push(`${label}: ${new TextDecoder().decode(await (await svc.getCharacteristic(k)).readValue()).replace(/\0/g, '').trim()}`); } catch {}
+      }
+    } catch {}
+    $('devInfo').textContent = out.length ? out.join(', ') : 'Der Sensor liefert keine Geräteinfos.';
+  }
+
+  function renderSub() {
+    const el = $('subInfo');
+    if (S.battery == null || !S.connected) { el.textContent = ''; return; }
+    el.innerHTML = `Sensor-Batterie <span class="${S.battery <= 15 ? 'low' : ''}">${S.battery} %</span>`;
+  }
+
+  async function onDisconnected() {
+    S.connected = false;
+    renderSub();
+    updateButtons();
+    if (S.manualDisconnect) { setStatus('Nicht verbunden'); return; }
+    for (let i = 1; i <= 10; i++) {
+      setStatus(`Verbindung verloren, Versuch ${i} von 10 …`, 'wait');
+      await new Promise(r => setTimeout(r, Math.min(1000 * i, 5000)));
+      try { await openGatt(); return; } catch {}
+    }
+    setStatus('Verbindung verloren');
+    $('hint').textContent = 'Tritt kurz an, um den Sensor zu wecken, und verbinde neu.';
+  }
+
+  function showError(msg) {
+    setStatus('Nicht verbunden');
+    $('hint').innerHTML = '<span class="error"></span>';
+    $('hint').firstChild.textContent = msg;
+  }
+
+  // ---------- Demo ----------
+  function startDemo() {
+    if (S.demoTimer) return;
+    let wheelF = 0, crankF = 0, t = 0, wt = 0, ct = 0;
+    S.connected = true;
+    setStatus('Demo-Modus', 'on');
+    S.demoTimer = setInterval(() => {
+      t++;
+      const p = 160 + 25 * Math.sin(t / 20) + (Math.random() - .5) * 20;
+      const kmh = 28 + 4 * Math.sin(t / 20);
+      const now = Math.round(t * 0.5 * 1024) & 0xFFFF;
+      const w0 = Math.floor(wheelF), c0 = Math.floor(crankF);
+      wheelF += kmh / 3.6 * 0.5 / (settings.circ / 1000);
+      crankF += 88 / 60 * 0.5;
+      if (Math.floor(wheelF) > w0) wt = now;
+      if (Math.floor(crankF) > c0) ct = now;
+      onPower(Math.round(p));
+      onWheel('demo', { revs: Math.floor(wheelF), time: wt, unit: 1024 });
+      onCrank('demo', { revs: Math.floor(crankF) & 0xFFFF, time: ct, unit: 1024 });
+    }, 500);
+    updateButtons();
+  }
+
+  // ---------- Training ----------
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && S.recording) S.wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+  function start() {
+    Object.assign(S, { recording: true, paused: false, startedAt: Date.now(), activeMs: 0, lastTick: Date.now(), distance: 0, samples: [] });
+    $('summary').hidden = true;
+    keepAwake();
+    updateButtons();
+  }
+
+  function togglePause() {
+    S.paused = !S.paused;
+    S.lastTick = Date.now();
+    updateButtons();
+  }
+
+  function stop() {
+    if (!confirm('Training beenden und speichern?')) return;
+    S.recording = false;
+    try { S.wakeLock && S.wakeLock.release(); } catch {}
+    const w = buildWorkout();
+    store.del('rolle.current');
+    if (w) {
+      const hist = store.get('rolle.history', []);
+      hist.unshift(w);
+      if (!store.set('rolle.history', hist)) $('hint').textContent = 'Der Speicher ist voll. Exportiere das Training jetzt, sonst geht es beim Schließen verloren.';
+      S.lastWorkout = w;
+      showSummary(w);
+      renderHistory();
+    }
+    updateButtons();
+  }
+
+  function buildWorkout() {
+    if (!S.samples.length) return null;
+    const pw = S.samples.map(s => s[1]);
+    const cads = S.samples.map(s => s[3]).filter(c => c > 0);
+    return {
+      id: S.startedAt,
+      start: S.startedAt,
+      activeMs: S.activeMs,
+      distance: S.distance,
+      avgP: pw.reduce((a, b) => a + b, 0) / pw.length,
+      maxP: Math.max(...pw),
+      avgC: cads.length ? cads.reduce((a, b) => a + b, 0) / cads.length : 0,
+      samples: S.samples // [zeit ms, watt, m/s, U/min, meter]
+    };
+  }
+
+  function tick() {
+    const now = Date.now();
+    if (now - S.lastPowerAt > 3000) { S.power = 0; S.inst = 0; S.powerBuf = []; }
+    if (now - S.lastWheelAt > 3000) S.speed = 0;
+    if (now - S.lastCrankAt > 3000) S.cadence = 0;
+
+    if (S.recording && !S.paused) {
+      S.activeMs += now - S.lastTick;
+      S.samples.push([now, Math.round(S.power), +S.speed.toFixed(2), Math.round(S.cadence), Math.round(S.distance)]);
+      if (S.samples.length % 30 === 0) store.set('rolle.current', buildWorkout());
+    }
+    S.lastTick = now;
+
+    S.spark.push(S.power);
+    if (S.spark.length > 120) S.spark.shift();
+    render();
+  }
+
+  // ---------- Anzeige ----------
+  function render() {
+    const live = S.connected;
+    $('vPower').textContent = live ? Math.round(S.power) : '–';
+    $('vInst').textContent = live ? Math.round(S.inst) : '–';
+    $('vAvgP').textContent = S.samples.length ? Math.round(S.samples.reduce((a, x) => a + x[1], 0) / S.samples.length) : '–';
+    $('vSpeed').textContent = live ? fmt(S.speed * 3.6, 1) : '–';
+    $('vCad').textContent = live ? Math.round(S.cadence) : '–';
+    $('vDist').textContent = fmt(S.distance / 1000, 2);
+    $('vTime').textContent = fmtTime(S.activeMs);
+    $('spark').innerHTML = sparkPath(S.spark, 300, 70, 120);
+  }
+
+  function sparkPath(vals, w, h, slots) {
+    if (vals.length < 2) return '';
+    const max = Math.max(200, ...vals) * 1.1;
+    const step = w / (slots - 1);
+    const off = slots - vals.length;
+    const pts = vals.map((v, i) => `${((i + off) * step).toFixed(1)},${(h - v / max * h).toFixed(1)}`);
+    const first = ((off) * step).toFixed(1);
+    return `<path d="M${first},${h} L${pts.join(' L')} L${w},${h} Z" fill="rgba(106,154,120,.25)"/>` +
+           `<polyline points="${pts.join(' ')}" fill="none" stroke="#6A9A78" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  }
+
+  function updateButtons() {
+    $('bConnect').hidden = S.connected;
+    $('bStart').hidden = !S.connected || S.recording;
+    $('bStart').classList.toggle('full', !S.recording);
+    $('bPause').hidden = !S.recording;
+    $('bStop').hidden = !S.recording;
+    $('bPause').textContent = S.paused ? 'Weiter' : 'Pause';
+    $('bPause').classList.toggle('primary', S.paused);
+    $('hint').textContent = !S.connected ? 'Tritt kurz in die Pedale, damit der Sensor aufwacht, und tippe dann auf „Trainer verbinden“.'
+      : S.recording ? (S.paused ? 'Pausiert. Zeit und Distanz laufen nicht weiter.' : 'Training läuft. Der Bildschirm bleibt an.')
+      : 'Verbunden. Starte das Training, sobald du loslegen willst.';
+  }
+
+  function showSummary(w) {
+    const avgKmh = w.activeMs ? w.distance / (w.activeMs / 1000) * 3.6 : 0;
+    const items = [
+      [fmtTime(w.activeMs), 'Zeit'], [fmt(w.distance / 1000, 2), 'km'], [fmt(avgKmh, 1), 'km/h im Schnitt'],
+      [Math.round(w.avgP), 'Watt im Schnitt'], [Math.round(w.maxP), 'Watt maximal'], [Math.round(w.avgC), 'U/min im Schnitt']
+    ];
+    $('sumGrid').innerHTML = items.map(([v, l]) => `<div><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+    const pw = w.samples.map(s => s[1]);
+    const bucket = Math.max(1, Math.ceil(pw.length / 150));
+    const smooth = [];
+    for (let i = 0; i < pw.length; i += bucket) { const sl = pw.slice(i, i + bucket); smooth.push(sl.reduce((a, b) => a + b, 0) / sl.length); }
+    $('sumChart').innerHTML = sparkPath(smooth, 300, 120, smooth.length);
+    $('summary').hidden = false;
+    $('summary').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderHistory() {
+    const hist = store.get('rolle.history', []);
+    if (!hist.length) { $('hist').innerHTML = '<li class="meta">Noch keine Trainings aufgezeichnet.</li>'; return; }
+    $('hist').innerHTML = hist.map(w => {
+      const d = new Date(w.start);
+      return `<li><div><div>${d.toLocaleDateString('de-DE')} um ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
+        <div class="meta">${fmtTime(w.activeMs)}, ${fmt(w.distance / 1000, 1)} km, ${Math.round(w.avgP)} W</div></div>
+        <div class="row" style="flex:none"><button data-exp="${w.id}">TCX</button><button data-del="${w.id}">Löschen</button></div></li>`;
+    }).join('');
+  }
+
+  $('hist').addEventListener('click', e => {
+    const hist = store.get('rolle.history', []);
+    const exp = e.target.dataset.exp, del = e.target.dataset.del;
+    if (exp) { const w = hist.find(x => String(x.id) === exp); if (w) downloadTCX(w); }
+    if (del && confirm('Dieses Training löschen?')) { store.set('rolle.history', hist.filter(x => String(x.id) !== del)); renderHistory(); }
+  });
+
+  // ---------- TCX-Export ----------
+  function downloadTCX(w) {
+    const iso = t => new Date(t).toISOString();
+    const avgC = Math.round(w.avgC);
+    const maxS = Math.max(...w.samples.map(s => s[2]));
+    const pts = w.samples.map(([t, p, v, c, d]) =>
+      `<Trackpoint><Time>${iso(t)}</Time><DistanceMeters>${d}</DistanceMeters><Cadence>${Math.min(c, 254)}</Cadence>` +
+      `<Extensions><ns3:TPX><ns3:Speed>${v}</ns3:Speed><ns3:Watts>${p}</ns3:Watts></ns3:TPX></Extensions></Trackpoint>`).join('\n');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
+<Activities><Activity Sport="Biking"><Id>${iso(w.start)}</Id>
+<Lap StartTime="${iso(w.start)}"><TotalTimeSeconds>${Math.round(w.activeMs / 1000)}</TotalTimeSeconds><DistanceMeters>${Math.round(w.distance)}</DistanceMeters>
+<MaximumSpeed>${maxS}</MaximumSpeed><Calories>0</Calories><Intensity>Active</Intensity><Cadence>${Math.min(avgC, 254)}</Cadence><TriggerMethod>Manual</TriggerMethod>
+<Track>
+${pts}
+</Track>
+<Extensions><ns3:LX><ns3:AvgWatts>${Math.round(w.avgP)}</ns3:AvgWatts><ns3:MaxWatts>${Math.round(w.maxP)}</ns3:MaxWatts></ns3:LX></Extensions>
+</Lap><Creator xsi:type="Device_t" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><Name>Rolle</Name></Creator></Activity></Activities>
+</TrainingCenterDatabase>`;
+    const d = new Date(w.start);
+    const name = `rolle-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.tcx`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([xml], { type: 'application/vnd.garmin.tcx+xml' }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  // ---------- Wiederherstellung nach Absturz ----------
+  const unfinished = store.get('rolle.current', null);
+  if (unfinished && unfinished.samples && unfinished.samples.length) {
+    const hist = store.get('rolle.history', []);
+    if (!hist.some(w => w.id === unfinished.id)) { hist.unshift(unfinished); store.set('rolle.history', hist); }
+    store.del('rolle.current');
+  }
+
+  // ---------- Verdrahtung ----------
+  $('inCirc').value = settings.circ;
+  $('inCirc').addEventListener('change', e => {
+    const v = parseInt(e.target.value, 10);
+    if (v >= 100 && v <= 4000) { settings.circ = v; store.set('rolle.settings', settings); }
+    else e.target.value = settings.circ;
+  });
+  $('bConnect').addEventListener('click', connect);
+  $('bStart').addEventListener('click', start);
+  $('bPause').addEventListener('click', togglePause);
+  $('bStop').addEventListener('click', stop);
+  $('bExport').addEventListener('click', () => S.lastWorkout && downloadTCX(S.lastWorkout));
+  $('bCloseSum').addEventListener('click', () => { $('summary').hidden = true; });
+  $('bDemo').addEventListener('click', startDemo);
+  window.addEventListener('beforeunload', e => { if (S.recording) { e.preventDefault(); e.returnValue = ''; } });
+
+  renderHistory();
+  updateButtons();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
